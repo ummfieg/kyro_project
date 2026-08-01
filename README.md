@@ -1,67 +1,124 @@
-# Opsia
+# Kyro
 
-Opsia는 Kubernetes 장애 증거를 보존하고 제한된 변경안을 GitOps Draft PR로 제안한 뒤 배포 결과를 다시 검증하는 운영 제어면입니다.
+> Kubernetes 운영 정보를 수집하고, 장애 분석(RCA)부터 복구 제안과 Safe PR 흐름까지 연결하는 웹 기반 운영 콘솔입니다.
 
-## 해결하는 문제
+Kyro는 여러 Kubernetes 클러스터의 리소스, 이벤트, 로그, 메트릭, GitOps 변경 이력을 한 화면에서 확인하고, 장애 발생 시 근거 기반으로 원인 후보와 복구 방향을 제안하는 팀 프로젝트입니다.
 
-장애 대응에서 관측 시점의 상태, 원인 판단, 실제 변경, 배포 후 결과가 서로 다른 도구와 대화에 흩어지면 재현과 리뷰가 어렵습니다. Opsia는 이 네 단계를 하나의 상관관계 ID와 불변 근거로 연결합니다.
+이 저장소는 팀 프로젝트 [Jungle-303-04/final](https://github.com/Jungle-303-04/final)을 개인 포트폴리오 제출용으로 fork하여 정리한 저장소입니다.
 
-## Golden Path
+## 주요 기능
 
-1. 읽기 전용 cluster agent가 Pod와 Event 증거를 제한된 범위로 수집합니다.
-2. 규칙 엔진이 증거 내용과 ImagePullBackOff 후보를 결정론적으로 대조합니다.
-3. 허용된 scalar 변경만 현재 GitOps manifest와 base SHA에 고정합니다.
-4. GitHub에 자동 병합되지 않는 Draft PR을 생성합니다.
-5. 병합·배포 이벤트 뒤 같은 대상을 다시 관측하고 회복 또는 검증 실패를 기록합니다.
+- **멀티 클러스터 운영 현황 확인**
+  - 클러스터 연결 상태, 리소스 목록, 토폴로지, 트래픽, 비용 정보를 콘솔에서 조회
+- **장애 탐지 및 RCA**
+  - Kubernetes 이벤트, 로그, 메트릭, GitOps 변경 이력을 장애 분석 근거로 수집
+  - CrashLoopBackOff, 이미지 문제, 네트워크, 스케줄링, 리소스 압박 등 원인 후보를 rule 기반으로 평가
+- **복구 제안 및 검토 흐름**
+  - RCA 결과를 바탕으로 복구 액션 후보를 생성
+  - 자동 실행이 위험한 작업은 승인/검토 단계를 거치도록 분리
+- **GitOps / Safe PR 연동**
+  - 복구가 필요한 변경을 직접 적용하지 않고 PR 기반으로 검토할 수 있도록 연결
+  - 변경 이력과 장애 시점을 RCA 근거로 함께 사용
+- **웹 콘솔 UI**
+  - Incidents, Resources, Topology, GitOps, Applications, Timeline, Alerts 등 운영 화면 제공
 
-완결된 대표 흐름은 `ImagePullBackOff → wrong_image_tag → image_tag_fix Draft PR → 재수집 검증`입니다.
+## 기술 스택
 
-## 안전 모델
+| 영역 | 기술 |
+| --- | --- |
+| Frontend | React, TypeScript, Vite, TanStack Table, Recharts, xterm.js |
+| Backend | Python, FastAPI, SQLAlchemy |
+| Event / Worker | NATS, event-driven worker architecture |
+| Storage | PostgreSQL, Redis |
+| DevOps | Docker, Kubernetes, Helm, Kustomize |
+| Observability | Prometheus, Loki, OpenTelemetry |
+| Test / Quality | Pytest, Ruff, Vitest, ESLint |
 
-- agent RBAC은 읽기 전용이며 `pods/exec`, `nodes/proxy`, `patch` 권한이 없습니다.
-- Golden Path 제어 흐름은 클러스터 명령을 직접 실행하지 않습니다. 남아 있는 command/realtime/terminal 표면은 정리 후보로 문서화합니다.
-- 수정안은 정확한 repository, manifest path, base SHA, source digest에 고정됩니다.
-- Secret 보정이나 외부 registry 장애처럼 자동 결정할 수 없는 원인은 운영자 검토로 종료합니다.
-- PR은 Draft로 생성되며 자동 merge, 자동 rollback, 범용 CD orchestration을 제공하지 않습니다.
-
-## 5분 빠른 확인
-
-요구 사항은 Python 3.13, [uv](https://docs.astral.sh/uv/), Node.js 22, Helm입니다.
-
-```bash
-uv sync --all-groups
-cd frontend && npm ci && cd ..
-make demo
-make gate
-```
-
-`make demo`는 외부 클러스터나 GitHub를 변경하지 않고 Golden Path의 계약 테스트를 실행합니다. 실제 설치 manifest는 `make manifest-check`로 검증합니다.
-
-## 테스트
-
-```bash
-make test                         # Ruff, compileall, backend pytest
-make gate-frontend                # lint, typecheck, frontend tests, production build
-make manifest-check               # Helm lint/template, RBAC·manifest 검사
-make product-brand-boundary-check # 과거 제품명과 개인 배포 경계 검사
-```
-
-## 아키텍처
+## 아키텍처 개요
 
 ```mermaid
 flowchart LR
-  A["Read-only cluster agent"] --> B["Evidence + incident"]
-  B --> C["Deterministic RCA"]
-  C --> D["Bounded patch + pinned base SHA"]
-  D --> E["GitHub Draft PR"]
-  E --> F["Post-deploy evidence verification"]
+  A["Kubernetes Cluster"] --> B["cluster-agent / node-collector"]
+  B --> C["API Gateway"]
+  C --> D["Event Bus (NATS)"]
+  D --> E["RCA / AI Workers"]
+  D --> F["Projection Workers"]
+  E --> G["RCA Report / Recovery Plan"]
+  F --> H["Read Models"]
+  G --> I["GitOps Safe PR"]
+  H --> J["React Console"]
+  I --> J
 ```
 
-현재 `scripts/services.py` 기준 runtime service catalog는 41개이며, 파일 시스템에는 `src/services/mcp/internal_control/app.py`까지 포함해 42개의 `app.py`가 있습니다. Golden Path의 핵심은 evidence, incident/RCA, Safe PR, verification 흐름이지만 command, dashboard, realtime, release-flow, mail, chat 같은 넓은 표면도 아직 코드에 남아 있습니다. 자세한 구성은 [Project Map](docs/PROJECT-MAP.md), 이벤트 흐름은 [Golden Path](docs/GOLDEN-PATH.md), 삭제·격리 판단은 [Cleanup Matrix](docs/CLEANUP-MATRIX.md)를 참고하세요.
+## 담당 영역
 
-## 현재 한계
+> 기여자: `ummfieg`
 
-- GitHub만 Draft PR provider로 지원합니다.
-- 대표 완료 시나리오는 ImagePullBackOff이며 다른 Kubernetes 원인 규칙은 동일한 증거 품질을 보장하지 않습니다.
-- 로컬 검증은 계약·빌드·manifest 수준입니다. 실제 cluster와 GitHub App을 잇는 end-to-end 검증은 배포 환경에서 별도로 수행해야 합니다.
-- command, dashboard, realtime, release-flow 관련 코드 표면은 삭제 완료가 아니며 Golden Path 밖 정리 대상으로 추적합니다.
+팀 프로젝트 중 제가 주로 다룬 영역은 **RCA rule 흐름과 복구 검토 흐름 보강**입니다.
+
+- **RCA rule catalog 보강**
+  - CrashLoop, rollout dependency, scheduling, network, resource pressure 등 장애 후보 rule 확장
+  - rule별 판단 근거와 누락 근거를 구분해 RCA 결과가 더 설명 가능하도록 정리
+  - 관련 파일: `src/services/ai/agent/causes/catalog/*`, `tests/test_rca_rule_catalog.py`
+
+- **RCA evidence 흐름 정리**
+  - provider evidence 응답 스키마와 evidence key를 정리
+  - GitOps 변경 이력과 장애 분석 근거를 연결하는 흐름 보강
+  - 관련 파일: `tests/test_rca_evidence.py`, `src/domains/rca/events.py`, `src/domains/rca/report_projection.py`
+
+- **복구 제안 / 승인 흐름 보강**
+  - 복구 액션의 실행 채널, 승인 필요 사유, Safe PR 유형을 구분
+  - 자동 복구와 검토 필요 복구를 분리해 위험 작업이 바로 실행되지 않도록 흐름 정리
+  - 관련 파일: `src/services/ai/agent/recovery/*`, `tests/test_recovery_authority_patches.py`
+
+- **RCA / 복구 UI 일부 개선**
+  - incident RCA 상세, 복구 진행 상태, Safe PR 연결 상태가 화면에서 더 명확히 보이도록 일부 UI 흐름 보강
+  - 관련 파일: `frontend/src/devpreview/rcaDetailFeed.ts`, `frontend/src/devpreview/recoveryProgress.ts`
+
+- **문서화**
+  - RCA evidence schema, rule catalog, provider evidence, recovery action compatibility 관련 문서 정리
+  - 관련 파일: `docs/rca-production-onboarding/*`
+
+## 주요 디렉터리
+
+```text
+frontend/                  React 기반 운영 콘솔
+src/domains/               FastAPI 도메인 라우터와 비즈니스 로직
+src/services/              이벤트 기반 worker, gateway, cluster-agent
+src/services/ai/agent/     RCA 원인 후보, 복구 액션, AI agent 로직
+charts/opsia/              Helm chart
+deploy/                    Kubernetes 배포 매니페스트
+tests/                     백엔드/RCA/복구 흐름 테스트
+```
+
+## 로컬 확인
+
+전체 시스템은 Kubernetes 클러스터, 환경변수, 외부 연동 설정이 필요합니다. 코드 확인과 정적 검사는 아래 명령을 기준으로 진행합니다.
+
+```bash
+# Python 의존성 동기화
+uv sync
+
+# 백엔드 린트
+make lint
+
+# 백엔드 테스트
+make test
+
+# 프론트엔드 실행
+cd frontend
+npm install
+npm run dev
+```
+
+라이브 백엔드에 프론트엔드를 연결해 확인할 때는 루트에서 아래 명령을 사용할 수 있습니다.
+
+```bash
+make frontend-live
+```
+
+## 프로젝트를 통해 학습한 점
+
+- Kubernetes 운영 데이터가 로그/메트릭/이벤트/GitOps 변경 이력으로 분산되어 있어, RCA 결과를 신뢰 가능하게 만들려면 근거 수집과 누락 근거 표현이 중요하다는 점
+- 복구 자동화는 실행 자체보다 안전장치가 중요하며, 승인/검토/Safe PR 같은 단계가 필요한 이유
+- 대규모 팀 프로젝트에서는 기능 구현만큼 API 계약, 테스트, 문서화가 중요하다는 점
