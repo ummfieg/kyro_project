@@ -36,19 +36,8 @@ Kyro는 여러 Kubernetes 클러스터의 리소스, 이벤트, 로그, 메트�
 
 ## 아키텍처 개요
 
-```mermaid
-flowchart LR
-  A["Kubernetes Cluster"] --> B["cluster-agent / node-collector"]
-  B --> C["API Gateway"]
-  C --> D["Event Bus (NATS)"]
-  D --> E["RCA / AI Workers"]
-  D --> F["Projection Workers"]
-  E --> G["RCA Report / Recovery Plan"]
-  F --> H["Read Models"]
-  G --> I["GitOps Safe PR"]
-  H --> J["React Console"]
-  I --> J
-```
+<img width="9822" height="4299" alt="아키텍처" src="https://github.com/user-attachments/assets/124d61e2-7125-4aa1-bb92-3def0ca804a1" />
+
 
 ## 담당 영역
 
