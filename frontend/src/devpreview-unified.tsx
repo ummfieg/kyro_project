@@ -2155,6 +2155,19 @@ function shouldPinRcaRecovery(update: RecoveryProgressOverride): boolean {
 
 function App() {
   const contract = useDevpreviewContracts();
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+  const demoRcaActive = isDemoRcaPath(pathname);
+
+  useEffect(() => {
+    const syncPathname = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", syncPathname);
+    window.addEventListener("demo-rca:navigation", syncPathname);
+    return () => {
+      window.removeEventListener("popstate", syncPathname);
+      window.removeEventListener("demo-rca:navigation", syncPathname);
+    };
+  }, []);
+
   // 헤더 계정/워크스페이스/로그아웃 — 실 GET /api/auth/session(하드코딩 세션 제거).
   const session = useSession();
   // 인증 세션이 워크스페이스 정체성의 기준이다. 클러스터 목록은 비어 있거나 늦게
@@ -2782,6 +2795,15 @@ function App() {
       {/* 전역 내비게이션 — 제품 셸의 바깥 틀 */}
       <GlobalNav collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         surface={surface} onSurface={(sf) => {
+          if (demoRcaActive) {
+            const search = sf === "home"
+              ? ""
+              : sf === "resources"
+              ? "?surface=resources&resource_view=map"
+              : `?surface=${sf}`;
+            window.history.pushState(window.history.state, "", `/${search}`);
+            window.dispatchEvent(new Event("demo-rca:navigation"));
+          }
           setRcaIncident(null);
           setDetail(null);
           setDeployApplicationDetailId(null);
@@ -3072,7 +3094,9 @@ function App() {
       {/* 콘텐츠 스크롤 영역 — 스크롤은 여기서만. gutter 고정으로 스크롤바 유무에 따른
           가로 점프(창 열닫힘 체감)를 없앤다. */}
       <div ref={contentScrollRef} data-shell-scroll-container="true" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "clip", scrollbarGutter: "stable" }}>
-      {surface === "connect" ? (
+      {demoRcaActive ? (
+        <DemoRcaSurface />
+      ) : surface === "connect" ? (
         /* 연결 설정 — 셸 안에서 위저드 서피스로 전환 (별도 페이지 아님) */
         <div style={{ position: "relative", minHeight: `calc(100vh / ${PRESENT_SCALE} - 57px)`, background: UI.bg }}>
           <ConnectWizard
@@ -3627,23 +3651,11 @@ function App() {
 // 단일 루트 엔트리(main.tsx)에서 마운트한다 —
 // 모듈 로드 시 자체 마운트하지 않고 UnifiedApp 컴포넌트만 내보낸다.
 export function UnifiedApp() {
-  const [pathname, setPathname] = useState(() => window.location.pathname);
-
-  useEffect(() => {
-    const syncPathname = () => setPathname(window.location.pathname);
-    window.addEventListener("popstate", syncPathname);
-    window.addEventListener("demo-rca:navigation", syncPathname);
-    return () => {
-      window.removeEventListener("popstate", syncPathname);
-      window.removeEventListener("demo-rca:navigation", syncPathname);
-    };
-  }, []);
-
   return (
     <DevpreviewContractProvider>
       <I18nProvider navigatorLanguage="ko-KR" storage={null}>
         <AuthSessionGateProvider reportUnauthorized={() => undefined}>
-          {isDemoRcaPath(pathname) ? <DemoRcaSurface /> : <App />}
+          <App />
         </AuthSessionGateProvider>
       </I18nProvider>
     </DevpreviewContractProvider>

@@ -14,20 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import {
-  BLUE,
-  HP,
-  INTERACTION,
-  PRESENT_SCALE,
-  RADIUS,
-  SOFT,
-  SPACE,
-  TINT,
-  TYPE,
-  UI,
-  blueA,
-  inkA,
-} from "../theme";
+import { BLUE, HP, INTERACTION, RADIUS, SOFT, SPACE, TINT, TYPE, UI, blueA, inkA } from "../theme";
 import {
   DEMO_RCA_CLUSTERS,
   DEMO_RCA_EVIDENCE,
@@ -123,28 +110,18 @@ export function DemoRcaSurface() {
   const next = nextStep(stepId);
 
   return (
-    <div
-      className="uni"
-      style={{
-        minHeight: `calc(100vh / ${PRESENT_SCALE})`,
-        background: UI.bg,
-        color: UI.ink,
-        fontFamily: "var(--font-sans)",
-        zoom: PRESENT_SCALE,
-      }}
-    >
-      <main style={{ maxWidth: 1180, margin: "0 auto", padding: SPACE.page, display: "grid", gap: SPACE.section }}>
-        <DemoHeader
-          activeStep={activeStep}
-          onBack={prev ? () => navigateDemoStep(prev) : null}
-          onToast={pushToast}
+    <div style={{ minHeight: "100%", background: UI.bg }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto", padding: SPACE.page, display: "grid", gap: SPACE.section }}>
+        <DemoHeader activeStep={activeStep} onBack={prev ? () => navigateDemoStep(prev) : null} onToast={pushToast} />
+        <DemoProgress
+          activeStepId={stepId}
+          onStepClick={(target) => {
+            if (stepIndex(target) <= stepIndex(stepId) + 1) navigateDemoStep(target);
+            else pushToast();
+          }}
         />
-        <DemoProgress activeStepId={stepId} onStepClick={(target) => {
-          if (stepIndex(target) <= stepIndex(stepId) + 1) navigateDemoStep(target);
-          else pushToast();
-        }} />
         <DemoScenarioFrame stepId={stepId} onNext={() => navigateDemoStep(next)} onToast={pushToast} />
-      </main>
+      </div>
       <DemoToastStack toasts={toasts} />
       <DemoStyle />
     </div>
