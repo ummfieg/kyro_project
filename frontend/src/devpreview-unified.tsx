@@ -46,6 +46,8 @@ import { useFleetSummaryFeed } from "./devpreview/fleetSummaryFeed";
 import { fleetHeaderGroups } from "./devpreview/fleetSummaryPresentation";
 import { type ProductSurfaceId } from "./devpreview/realtimeContractMatrix";
 import { parseShellRoute, updateShellRouteSearch } from "./devpreview/shellRoute";
+import { DemoRcaSurface } from "./devpreview/demo-rca/DemoRcaSurface";
+import { isDemoRcaPath } from "./devpreview/demo-rca/route";
 
 // 목록(⋮ 메뉴) 연결 해제도 상세 뷰와 같은 캐논 계약 port 를 공유한다 —
 // 두 번째 unregister 구현이 생기지 않게 하는 ClusterLifecycleControl 원칙 준수.
@@ -3625,11 +3627,23 @@ function App() {
 // 단일 루트 엔트리(main.tsx)에서 마운트한다 —
 // 모듈 로드 시 자체 마운트하지 않고 UnifiedApp 컴포넌트만 내보낸다.
 export function UnifiedApp() {
+  const [pathname, setPathname] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const syncPathname = () => setPathname(window.location.pathname);
+    window.addEventListener("popstate", syncPathname);
+    window.addEventListener("demo-rca:navigation", syncPathname);
+    return () => {
+      window.removeEventListener("popstate", syncPathname);
+      window.removeEventListener("demo-rca:navigation", syncPathname);
+    };
+  }, []);
+
   return (
     <DevpreviewContractProvider>
       <I18nProvider navigatorLanguage="ko-KR" storage={null}>
         <AuthSessionGateProvider reportUnauthorized={() => undefined}>
-          <App />
+          {isDemoRcaPath(pathname) ? <DemoRcaSurface /> : <App />}
         </AuthSessionGateProvider>
       </I18nProvider>
     </DevpreviewContractProvider>
