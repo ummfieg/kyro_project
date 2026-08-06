@@ -4,6 +4,8 @@ import type { FleetSummaryFeedView } from "./fleetSummaryFeed";
 import type { RcaIssueItem } from "../api/schemas";
 import type { InventoryResourcesView, InventoryKindCountsView, Row } from "./inventoryResourcesFeed";
 import type { InventoryNamespacesView } from "./inventoryNamespacesFeed";
+import type { ApplicationView } from "./deployFeed";
+import type { ChangeEventView } from "./changeTimelineFeed";
 
 export const DEMO_RCA_CLUSTER_ID = "battle-ops";
 export const DEMO_RCA_NAMESPACE = "sandbox";
@@ -386,3 +388,101 @@ export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = [
     promoted_by: "demo",
   },
 ];
+
+
+export const DEMO_RCA_APPLICATIONS: ApplicationView[] = [
+  {
+    id: "demo-app-api-server",
+    name: "api-server",
+    environments: ["sandbox"],
+    lifecycleStatus: "active",
+    repositoryRef: "github.com/ummfieg/kyro_project",
+    defaultBranch: "dev",
+    manifestPath: "k8s/api-server/deployment.yaml",
+    healthStatus: "degraded",
+    deliveryStatus: "outofsync",
+    deliveryAvailability: "available",
+    workflowRunId: "demo-run-api-server",
+    deliveryObservedAt: "2026-08-04T10:13:24+09:00",
+  },
+  {
+    id: "demo-app-lobby-worker",
+    name: "lobby-worker",
+    environments: ["sandbox"],
+    lifecycleStatus: "active",
+    repositoryRef: "github.com/ummfieg/kyro_project",
+    defaultBranch: "dev",
+    manifestPath: "k8s/lobby-worker/deployment.yaml",
+    healthStatus: "healthy",
+    deliveryStatus: "synced",
+    deliveryAvailability: "available",
+    workflowRunId: "demo-run-lobby-worker",
+    deliveryObservedAt: "2026-08-04T10:10:12+09:00",
+  },
+  {
+    id: "demo-app-matchmaker",
+    name: "matchmaker",
+    environments: ["game"],
+    lifecycleStatus: "active",
+    repositoryRef: "github.com/ummfieg/kyro_project",
+    defaultBranch: "dev",
+    manifestPath: "k8s/matchmaker/deployment.yaml",
+    healthStatus: "healthy",
+    deliveryStatus: "synced",
+    deliveryAvailability: "available",
+    workflowRunId: "demo-run-matchmaker",
+    deliveryObservedAt: "2026-08-04T10:08:33+09:00",
+  },
+];
+
+export function demoRcaChangeEvents(windowToMs: number): ChangeEventView[] {
+  const offset = (hours: number) => windowToMs - hours * 60 * 60 * 1000;
+  const events: ChangeEventView[] = [
+    {
+      id: "demo-change-replicas-scaled-down",
+      kind: "gitops_change",
+      activity: "change",
+      occurredMs: offset(7.5),
+      rawTitle: "api-server replicas changed",
+      title: "api-server replicas 변경",
+      severity: "warning",
+    },
+    {
+      id: "demo-change-api-server-deploy",
+      kind: "deployment",
+      activity: "change",
+      occurredMs: offset(5.2),
+      rawTitle: "api-server deployment updated",
+      title: "api-server 배포 변경",
+      severity: "info",
+    },
+    {
+      id: "demo-change-admission-failure",
+      kind: "incident",
+      activity: "unhealthy",
+      occurredMs: offset(1.1),
+      rawTitle: "api-server admission failure",
+      title: "api-server 입장 실패 감지",
+      severity: "critical",
+    },
+    {
+      id: "demo-change-rca-completed",
+      kind: "incident",
+      activity: "warning",
+      occurredMs: offset(0.8),
+      rawTitle: "RCA completed",
+      title: "RCA 원인 분석 완료",
+      severity: "warning",
+    },
+    {
+      id: "demo-change-recovery-plan",
+      kind: "gitops_change",
+      activity: "change",
+      occurredMs: offset(0.5),
+      rawTitle: "recovery plan prepared",
+      title: "복구 플랜 생성",
+      severity: "info",
+    },
+  ];
+  return events.sort((left, right) => left.occurredMs - right.occurredMs);
+}

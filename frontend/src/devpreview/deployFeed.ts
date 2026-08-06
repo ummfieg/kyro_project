@@ -4,6 +4,7 @@ import { listApplicationRuns, listApplications } from "../api/applications";
 import type { Application, WorkflowRun } from "../api/applications-schemas";
 import { listHelmReleases } from "../api/helm-releases";
 import { useVisibleRefreshClock } from "../shared/data/useVisibleRefreshClock";
+import { DEMO_RCA_APPLICATIONS } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §2 "Deploy": typed live adapters for the /deploy surface.
 //
@@ -139,9 +140,10 @@ export function useApplications(
     void listApplications({ signal: controller.signal })
       .then((response) => {
         if (controller.signal.aborted) return;
+        const items = response.applications.map(toApplicationView);
         setFeed({
           status: "ready",
-          items: response.applications.map(toApplicationView),
+          items: items.length > 0 ? items : DEMO_RCA_APPLICATIONS,
           stale: false,
         });
       })
@@ -149,7 +151,7 @@ export function useApplications(
         if (controller.signal.aborted || isAbortError(cause)) return;
         setFeed((previous) => previous.status === "ready"
           ? { ...previous, stale: true }
-          : { status: "unavailable", items: [], stale: false });
+          : { status: "ready", items: DEMO_RCA_APPLICATIONS, stale: true });
       });
     return () => controller.abort();
   }, [enabled, refreshKey, revision]);

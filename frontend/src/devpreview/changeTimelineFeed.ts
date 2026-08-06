@@ -11,6 +11,7 @@ import type {
   TimelineEndpointQuery,
 } from "../api/timeline-schemas";
 import { loadSharedTimelineCapabilities } from "./timelineCapabilitiesFeed";
+import { DEMO_RCA_CLUSTER_ID, demoRcaChangeEvents } from "./demoRcaScenarioMock";
 import { operationalMessageLabel } from "./statusLabel";
 
 // Timeline은 보존 스냅샷과 opaque cursor SSE를 하나의 계약으로 소비한다.
@@ -122,6 +123,23 @@ export function buildTimelineBuckets(
     }
   }
   return buckets;
+}
+
+function demoRcaChangeTimelineFeed(windowFromMs: number, windowToMs: number): ChangeTimelineFeed {
+  const events = demoRcaChangeEvents(windowToMs)
+    .filter((event) => event.occurredMs >= windowFromMs && event.occurredMs < windowToMs);
+  return {
+    status: "ready",
+    events,
+    buckets: buildTimelineBuckets(events, windowFromMs, windowToMs),
+    gaps: [],
+    windowFromMs,
+    windowToMs,
+    transport: "timeline-sse",
+    observedScopes: 1,
+    streamingScopes: 1,
+    totalScopes: 1,
+  };
 }
 
 function buildTimelineQuery(
@@ -363,9 +381,12 @@ export function useChangeTimeline(
           publish(0);
           return;
         }
+        const scopedClusterIds = clusterKey.split("\u0000");
+        const demoFallback = scopedClusterIds.includes(DEMO_RCA_CLUSTER_ID)
+          ? demoRcaChangeTimelineFeed(windowFromMs, windowToMs)
+          : null;
         const capabilities = await loadSharedTimelineCapabilities();
         if (signal.aborted) return;
-        const scopedClusterIds = clusterKey.split("\u0000");
         const chunks = chunksOf(scopedClusterIds, MAX_QUERY_SCOPES);
         if (chunks.length === 0) {
           publish(0);
@@ -377,7 +398,10 @@ export function useChangeTimeline(
             workspaceId,
             clusterChunk,
           );
-          if (!query) return Promise.resolve();
+          if (!query) {
+            if (demoFallback) setFeed(demoFallback);
+            return Promise.resolve();
+          }
           states.set(index, {
             events: new Map(),
             coverage: [],
@@ -391,6 +415,11 @@ export function useChangeTimeline(
         await Promise.all(tasks);
       } catch (cause: unknown) {
         if (signal.aborted || isAbortError(cause)) return;
+        const scopedClusterIds = clusterKey ? clusterKey.split("\u0000") : [];
+        if (scopedClusterIds.includes(DEMO_RCA_CLUSTER_ID)) {
+          setFeed(demoRcaChangeTimelineFeed(windowFromMs, windowToMs));
+          return;
+        }
         setFeed((current) => ({ ...current, status: "unavailable" }));
       }
     })();
