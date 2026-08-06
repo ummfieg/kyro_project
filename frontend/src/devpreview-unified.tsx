@@ -7,7 +7,7 @@ import {
   Server, FileCog, Network, Globe, Search, KeyRound,
   Rocket, Database, Boxes, Copy, LayoutGrid, Play, Timer, Plug, DoorOpen, ShieldCheck, MoveDiagonal,
   HardDrive, Cpu, Folder, Activity, UserCog, Eye, Radio, ChevronDown, Pin,
-  Home, ListTree, AlertTriangle, Clock, Coins, Settings, Sparkles, PanelLeftClose, PanelLeftOpen,
+  Home, ListTree, AlertTriangle, Clock, Settings, Sparkles, PanelLeftClose, PanelLeftOpen,
   Bell, Pencil, Check, Hourglass, Webhook, SignalHigh, Building2, LogOut, RefreshCw,
 } from "lucide-react";
 import { HomeClustersWidget, NodePodSlotGrid, OpsiaMap } from "./devpreview-opsia";
@@ -83,7 +83,6 @@ import {
   useRcaIssueDetails,
   type RcaIssueDetailView,
 } from "./devpreview/rcaDetailFeed";
-import { useCostOverview } from "./devpreview/costFeed";
 import { useSession, sessionInitial } from "./devpreview/sessionFeed";
 import {
   useInventoryNamespaces,
@@ -1766,7 +1765,6 @@ const NAV_ITEMS: { id: string; label: string; icon: typeof Home }[] = [
   { id: "deploy", label: "배포", icon: Rocket },
   { id: "issues", label: "이슈", icon: AlertTriangle },
   { id: "timeline", label: "타임라인", icon: Clock },
-  { id: "cost", label: "비용", icon: Coins },
   // 알림·AI 대화 = 내역 모아보기 서피스(벨·AI 패널의 "전체 보기" 목적지) — 주 내비 소속
   { id: "alerts", label: "알림", icon: Bell },
   { id: "ai", label: "AI 대화", icon: Sparkles },
@@ -1837,7 +1835,6 @@ const W_DEFS: { id: string; title: string; info: string; defaultSpan: DashboardW
   { id: "W4", title: "활동 추이", info: "기간 내 배포·알림·장애 리소스 수의 흐름", defaultSpan: 3 },
   { id: "W5", title: "네임스페이스 파드 분포", info: "파드 수 상위 네임스페이스 — 항목 클릭 시 리소스 목록으로 필터 이동", defaultSpan: 2 },
   { id: "W6", title: "장애·주의 리소스", info: "지금 주의가 필요한 리소스 상위 5 — 행 클릭 시 상세", defaultSpan: 2 },
-  { id: "W7", title: "비용", info: "이번 달 클러스터 비용 요약 (증가는 주의 톤)", defaultSpan: 1 },
   { id: "W8", title: "최근 변경", info: "타임라인 최신 변경 5건의 미니 뷰", defaultSpan: 4 },
   { id: "W9", title: "현재 경보", info: "전역 경보 피드에서 지금 발생 중인 최신 경보", defaultSpan: 2 },
   { id: "W10", title: "운영 대기열", info: "승인 대기·실행 중 워크플로·처리 실패의 현재 합계", defaultSpan: 2 },
@@ -1909,8 +1906,6 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
   );
   // W2 이슈 위젯 — 실 RCA 이슈 큐(GET /api/dashboard/rca/issues). 빈 배열=관측된 이슈 없음.
   const issues = useRcaIssues(incidentClusterIds);
-  // W7 비용 위젯 — 실 GET /api/cost/overview. 현 계약은 관측 unavailable(가격 backfill 금지).
-  const cost = useCostOverview(clusters);
 
   // priority 14: 좁은 화면(≤768px)에서 클러스터 카드·위젯 보드를 1열로, 상단 컨트롤을
   // 줄바꿈해 한글이 글자 단위로 세로 붕괴하지 않도록 한다.
@@ -2037,17 +2032,6 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
             ? <div style={{ display: "flex", flexDirection: "column", gap: 6 }}><span style={{ fontSize: TYPE.caption, color: TINT.warn.fg }}>최근 관측값 · 재조회 대기</span>{content}</div>
             : content;
         }
-      case "W7": {
-        if (cost.status === "loading") return <span style={{ fontSize: TYPE.label, color: UI.ink3 }}>불러오는 중…</span>;
-        if (cost.status === "error") return <span style={{ fontSize: TYPE.label, color: UI.ink3 }}>비용을 불러오지 못했습니다</span>;
-        // 현 dev 계약: 비용 관측 unavailable. 가짜 총액을 backfill하지 않고 정직 상태 표시.
-        return (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <span style={{ fontSize: TYPE.body, fontWeight: 600, color: UI.ink2 }}>비용 관측 안 됨</span>
-            <span style={{ fontSize: TYPE.caption, color: UI.ink3 }}>{reasonLabel(cost.reasonCodes[0] ?? "cost_observation_unavailable")}</span>
-          </div>
-        );
-      }
       case "W8":
         if (changeTimeline.status === "loading") return <span style={{ fontSize: TYPE.label, color: UI.ink3 }}>불러오는 중…</span>;
         if (changeTimeline.status === "unavailable") return <span style={{ fontSize: TYPE.label, color: UI.ink3 }}>최근 변경 관측 안 됨</span>;
@@ -3232,7 +3216,6 @@ function App() {
             else if (id === "W2") setSurface("issues");
             else if (id === "W3") { setDeployRepositoryFilter(null); setSurface("deploy"); }
             else if (id === "W4" || id === "W8") setSurface("timeline");
-            else if (id === "W7") setSurface("cost");
             else if (id === "W9") setSurface("alerts");
             else if (id === "W10" || id === "W11" || id === "W12") { setDeployRepositoryFilter(null); setSurface("deploy"); }
             else { setSurface("resources"); setResView("list"); setKindId("Pod"); }
