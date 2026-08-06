@@ -4,7 +4,7 @@ import type { FleetSummaryFeedView } from "./fleetSummaryFeed";
 import type { RcaIssueItem } from "../api/schemas";
 import type { InventoryResourcesView, InventoryKindCountsView, Row } from "./inventoryResourcesFeed";
 import type { InventoryNamespacesView } from "./inventoryNamespacesFeed";
-import type { ApplicationView } from "./deployFeed";
+import type { ApplicationRunView, ApplicationView } from "./deployFeed";
 import type { ChangeEventView } from "./changeTimelineFeed";
 
 export const DEMO_RCA_CLUSTER_ID = "battle-ops";
@@ -432,6 +432,103 @@ export const DEMO_RCA_APPLICATIONS: ApplicationView[] = [
     deliveryAvailability: "available",
     workflowRunId: "demo-run-matchmaker",
     deliveryObservedAt: "2026-08-04T10:08:33+09:00",
+  },
+];
+
+export const DEMO_RCA_APPLICATION_RUNS: ApplicationRunView[] = [
+  {
+    applicationId: "demo-app-api-server",
+    applicationName: "api-server",
+    repositoryRef: "github.com/ummfieg/kyro_project",
+    workflowRunId: "demo-run-api-server-recovery",
+    status: "succeeded",
+    currentStep: "health",
+    commitSha: "afe42d91c7b3e8f4a21a",
+    clusterId: DEMO_RCA_CLUSTER_ID,
+    commandId: "demo-command-auto-recover-api-server",
+    createdAt: "2026-08-04T10:13:30+09:00",
+    updatedAt: "2026-08-04T10:14:32+09:00",
+    steps: [
+      {
+        name: "diff",
+        status: "succeeded",
+        message: "api-server replicas drift와 admission failure 증가를 같은 RCA 흐름에 연결했습니다.",
+        updatedAt: "2026-08-04T10:13:36+09:00",
+        details: {
+          resource_name: DEMO_RCA_DEPLOYMENT_NAME,
+          namespace: DEMO_RCA_NAMESPACE,
+          cluster_id: DEMO_RCA_CLUSTER_ID,
+          drift_field: "spec.replicas",
+        },
+      },
+      {
+        name: "policy",
+        status: "succeeded",
+        message: "운영 환경에서는 Safe PR 또는 approval_required 경로가 필요한 변경으로 분류됩니다.",
+        updatedAt: "2026-08-04T10:13:50+09:00",
+        details: {
+          route: "safe_pr_available",
+          risk_level: "medium",
+          blast_radius: "Deployment api-server",
+        },
+      },
+      {
+        name: "apply",
+        status: "succeeded",
+        message: "데모에서는 auto route로 replicas 복구를 실행했습니다.",
+        updatedAt: "2026-08-04T10:14:12+09:00",
+        details: {
+          route: "auto",
+          command_id: "demo-command-auto-recover-api-server",
+          expected_replicas: 3,
+        },
+      },
+      {
+        name: "health",
+        status: "succeeded",
+        message: "api-server Ready replica가 회복되고 admission failure 알림이 해소되었습니다.",
+        updatedAt: "2026-08-04T10:14:32+09:00",
+        details: {
+          pod_name: DEMO_RCA_POD_NAME,
+          health: "healthy",
+          alert_status: "resolved",
+        },
+      },
+    ],
+    promotionGate: {
+      route: "auto",
+      note: "데모에서는 자동 복구로 처리하지만 운영 환경에서는 Safe PR 또는 승인 경로를 검토합니다.",
+    },
+  },
+  {
+    applicationId: "demo-app-lobby-worker",
+    applicationName: "lobby-worker",
+    repositoryRef: "github.com/ummfieg/kyro_project",
+    workflowRunId: "demo-run-lobby-worker-sync",
+    status: "succeeded",
+    currentStep: "health",
+    commitSha: "c4d02891ab771fe30de2",
+    clusterId: DEMO_RCA_CLUSTER_ID,
+    commandId: null,
+    createdAt: "2026-08-04T10:09:10+09:00",
+    updatedAt: "2026-08-04T10:10:12+09:00",
+    steps: [
+      {
+        name: "render",
+        status: "succeeded",
+        message: "manifest 렌더링 완료",
+        updatedAt: "2026-08-04T10:09:24+09:00",
+        details: { manifest_path: "k8s/lobby-worker/deployment.yaml" },
+      },
+      {
+        name: "health",
+        status: "succeeded",
+        message: "런타임 상태 정상",
+        updatedAt: "2026-08-04T10:10:12+09:00",
+        details: { health: "healthy" },
+      },
+    ],
+    promotionGate: null,
   },
 ];
 

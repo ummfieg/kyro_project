@@ -4,7 +4,7 @@ import { listApplicationRuns, listApplications } from "../api/applications";
 import type { Application, WorkflowRun } from "../api/applications-schemas";
 import { listHelmReleases } from "../api/helm-releases";
 import { useVisibleRefreshClock } from "../shared/data/useVisibleRefreshClock";
-import { DEMO_RCA_APPLICATIONS } from "./demoRcaScenarioMock";
+import { DEMO_RCA_APPLICATIONS, DEMO_RCA_APPLICATION_RUNS } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §2 "Deploy": typed live adapters for the /deploy surface.
 //
@@ -233,6 +233,8 @@ export function useApplicationRuns(
     active ? DEPLOY_LIST_ACTIVE_POLL_MS : DEPLOY_LIST_POLL_MS,
   );
   const applicationKey = applications.map(({ id, workflowRunId }) => `${id}:${workflowRunId ?? ""}`).join("|");
+  const demoApplicationIds = new Set(DEMO_RCA_APPLICATIONS.map((application) => application.id));
+  const hasDemoApplications = applications.some((application) => demoApplicationIds.has(application.id));
   useEffect(() => {
     if (applications.length === 0) {
       return undefined;
@@ -254,12 +256,15 @@ export function useApplicationRuns(
       const fulfilled = results.filter((result): result is PromiseFulfilledResult<ApplicationRunView[]> => result.status === "fulfilled");
       const items = fulfilled.flatMap(({ value }) => value).sort((left, right) =>
         (right.updatedAt ?? right.createdAt ?? "").localeCompare(left.updatedAt ?? left.createdAt ?? ""));
-      setFeed({ status: fulfilled.length > 0 ? "ready" : "unavailable", items });
+      setFeed({
+        status: fulfilled.length > 0 || hasDemoApplications ? "ready" : "unavailable",
+        items: items.length > 0 ? items : hasDemoApplications ? DEMO_RCA_APPLICATION_RUNS : [],
+      });
     });
     return () => controller.abort();
     // applicationKey is a stable serialization of the server-owned identities.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicationKey, refreshKey, revision]);
+  }, [applicationKey, hasDemoApplications, refreshKey, revision]);
   return applications.length === 0 ? { status: "ready", items: [] } : feed;
 }
 
