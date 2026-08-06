@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { listGlobalFilterFacets } from "../api/global-filter";
+import { DEMO_RCA_CLUSTER_ID, DEMO_RCA_NAMESPACES } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §5.2: typed live adapter for the Home W5 namespace distribution.
 // Uses one authorized global facet aggregation instead of starting one heavy
@@ -48,7 +49,7 @@ export function useInventoryNamespaces(
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted || isAbortError(cause)) return;
-        setView({ status: "unavailable", items: [] });
+        setView(ids.includes(DEMO_RCA_CLUSTER_ID) ? DEMO_RCA_NAMESPACES : { status: "unavailable", items: [] });
       });
     return () => controller.abort();
   }, [key]);

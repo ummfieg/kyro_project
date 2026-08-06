@@ -193,6 +193,9 @@ export function recoveryProgressState({
     || currentAudit.some(isRetryableRecoveryBlocker)
   );
   const hasPolicyRejection = currentAudit.some(isPolicyRecoveryRejection);
+  if (normalizedReasonCode === "demo_auto_resolved") {
+    return state("completed", "복구 완료", 5, "completed", latestEvent);
+  }
   const commandRejected = effectiveStatus === "command_rejected"
     || normalizedSubject === "command.rejected"
     || subjects.includes("command.rejected");

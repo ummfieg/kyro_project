@@ -7,6 +7,7 @@ import { isAbortError } from "../shared/data/asyncResourceState";
 import { toClusterSummaryView, type ClusterSummaryView } from "./clusterSummaryFeed";
 import { useFleetSummaryStream } from "./fleetSummaryStream";
 import { useBoundedPoll } from "./useBoundedPoll";
+import { DEMO_RCA_CLUSTER_ID, DEMO_RCA_FLEET_VIEW } from "./demoRcaScenarioMock";
 
 // Fleet 롤업은 전 클러스터를 단일 요청으로 반환한다(클러스터당 1요청 아님).
 // 홈 카드는 이 단일 원장을 소비해 드릴다운과 숫자가 어긋나지 않게 한다.
@@ -161,15 +162,19 @@ export function useFleetSummaryFeed(
       };
     }),
     // 실패(폴백 포함 전부 실패)는 직전 정상 값을 유지한다 — 화면을 비우지 않는다.
-    onError: () => setView((previous) => ({
-      ...previous,
-      status: previous.status === "loading" ? "unavailable" : previous.status,
-      totalsObservation: previous.totals
-        ? "stale"
-        : previous.totalsObservation === "loading"
-          ? "unavailable"
-          : previous.totalsObservation,
-    })),
+    onError: () => setView((previous) => (
+      ids.includes(DEMO_RCA_CLUSTER_ID)
+        ? DEMO_RCA_FLEET_VIEW
+        : {
+            ...previous,
+            status: previous.status === "loading" ? "unavailable" : previous.status,
+            totalsObservation: previous.totals
+              ? "stale"
+              : previous.totalsObservation === "loading"
+                ? "unavailable"
+                : previous.totalsObservation,
+          }
+    )),
   });
 
   return useMemo(() => view, [view]);

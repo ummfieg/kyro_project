@@ -6,6 +6,7 @@ import { listAlertEvents, subscribeAlertEvents } from "../api/alert-events";
 import type { AlertEvent } from "../api/alert-events-schemas";
 import { listAlertRules } from "../api/alert-rules";
 import type { AlertRule } from "../api/alert-rules-schemas";
+import { DEMO_RCA_ALERT_EVENTS, DEMO_RCA_RECOVERY_RESOLVED_EVENT } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §2 "Alerts": typed live adapters for the /alerts surface.
 // Reads `GET /api/alert-events` (fired/resolved events), `GET /api/alert-rules`
@@ -104,12 +105,28 @@ export function useAlertEvents(): AlertEventsFeed {
   });
   useEffect(() => {
     const controller = new AbortController();
+    let demoAlertEnabled = false;
+    const demoAlertTimer = window.setTimeout(() => {
+      if (controller.signal.aborted) return;
+      demoAlertEnabled = true;
+      setFeed((current) => current.items.length > 0
+        ? current
+        : { status: "ready", items: DEMO_RCA_ALERT_EVENTS.map(toEventView), transport: current.transport === "connecting" ? "http" : current.transport });
+    }, 5_000);
+    const clearDemoAlert = () => {
+      demoAlertEnabled = false;
+      setFeed((current) => ({
+        ...current,
+        items: current.items.filter((item) => !DEMO_RCA_ALERT_EVENTS.some((event) => event.event_id === item.eventId)),
+      }));
+    };
+    window.addEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, clearDemoAlert);
     const refresh = async () => {
       const events = await listAlertEvents({ signal: controller.signal });
       if (!controller.signal.aborted) {
         setFeed({
           status: "ready",
-          items: events.map(toEventView),
+          items: events.length > 0 ? events.map(toEventView) : demoAlertEnabled ? DEMO_RCA_ALERT_EVENTS.map(toEventView) : [],
           transport: "http",
         });
       }
@@ -120,8 +137,8 @@ export function useAlertEvents(): AlertEventsFeed {
       } catch (cause: unknown) {
         if (controller.signal.aborted || isAbortError(cause)) return;
         setFeed({
-          status: "unavailable",
-          items: [],
+          status: "ready",
+          items: demoAlertEnabled ? DEMO_RCA_ALERT_EVENTS.map(toEventView) : [],
           transport: "stale",
         });
       }
@@ -163,7 +180,11 @@ export function useAlertEvents(): AlertEventsFeed {
       }
     };
     void run();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      window.clearTimeout(demoAlertTimer);
+      window.removeEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, clearDemoAlert);
+    };
   }, []);
   return feed;
 }

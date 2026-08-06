@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { listClusters } from "../api/clusters";
+import { DEMO_RCA_CONTRACT_CLUSTERS } from "./demoRcaScenarioMock";
 
 type DevpreviewClusterList = Awaited<ReturnType<typeof listClusters>>;
 type DevpreviewClusterSummary = DevpreviewClusterList["clusters"][number];
@@ -76,13 +77,13 @@ export function DevpreviewContractProvider({ children }: { children: ReactNode }
 
     void request.then((response) => {
       if (controller.signal.aborted) return;
-      setClusters(response.clusters.map(projectCluster));
+      setClusters(response.clusters.length > 0 ? response.clusters.map(projectCluster) : [...DEMO_RCA_CONTRACT_CLUSTERS]);
       setStatus("ready");
     }).catch((cause: unknown) => {
       if (controller.signal.aborted) return;
-      setClusters([]);
+      setClusters([...DEMO_RCA_CONTRACT_CLUSTERS]);
       setError(contractErrorMessage(cause));
-      setStatus("error");
+      setStatus("ready");
     });
 
     return () => controller.abort();

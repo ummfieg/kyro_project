@@ -4,6 +4,7 @@ import { listInventoryResourcesByType } from "../api/inventory-query";
 import type { InventoryResource } from "../api/inventory-schemas";
 import { projectInventoryResourceRow } from "./inventoryResourceTableProjection";
 import { getSharedInventorySummary } from "./inventorySummaryFeed";
+import { DEMO_RCA_CLUSTER_ID, DEMO_RCA_KIND_COUNTS, DEMO_RCA_RECOVERY_RESOLVED_EVENT, demoRcaInventoryView } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001: typed live adapter for the 통합 리소스 37종 테이블.
 // Reads only `GET /api/clusters/{id}/inventory/resources?resource_type=` and
@@ -50,6 +51,17 @@ function isAbortError(error: unknown): boolean {
     && (error as { name?: unknown }).name === "AbortError";
 }
 
+
+function useDemoRcaResolved(): boolean {
+  const [resolved, setResolved] = useState(false);
+  useEffect(() => {
+    const onResolved = () => setResolved(true);
+    window.addEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, onResolved);
+    return () => window.removeEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, onResolved);
+  }, []);
+  return resolved;
+}
+
 function matchesResourceType(resource: InventoryResource, resourceType: string): boolean {
   return resource.resource_type.toLowerCase() === resourceType
     || kindToResourceType(resource.kind) === resourceType;
@@ -67,6 +79,7 @@ export function useInventoryResources(
   // useEffect dep = 조인된 단일 문자열 key. 클러스터 id·resource_type 모두 공백이
   // 없으므로 이펙트 내부에서 key만으로 되살려 참조(exhaustive-deps: key 하나).
   const key = canFetch ? [clusterId, rt].join(" ") : "";
+  const demoResolved = useDemoRcaResolved();
   useEffect(() => {
     // 빈 스코프(클러스터 미선택) 또는 resource_type 미지정 시 요청하지 않는다.
     // 동기 setState 금지 규칙에 따라 여기서는 상태를 만지지 않고,
@@ -91,10 +104,10 @@ export function useInventoryResources(
       })
       .catch((cause: unknown) => {
         if (isAbortError(cause)) return;
-        setView({ status: "unavailable", rows: [] });
+        setView(cid === DEMO_RCA_CLUSTER_ID ? demoRcaInventoryView(type, demoResolved) : { status: "unavailable", rows: [] });
       });
     return () => controller.abort();
-  }, [key]);
+  }, [demoResolved, key]);
   return canFetch ? view : { status: "ready", rows: [] };
 }
 
@@ -113,6 +126,7 @@ export function useInventoryResourcesAcrossClusters(
     key: "",
   });
   const type = resourceType?.trim() ?? "";
+  const demoResolved = useDemoRcaResolved();
   const ids = [...new Set(clusterIds.filter(Boolean))];
   const key = type && ids.length > 0 ? `${type}\u0000${ids.join("\u0000")}` : "";
   useEffect(() => {
@@ -133,10 +147,12 @@ export function useInventoryResourcesAcrossClusters(
         .filter((resource) => matchesResourceType(resource, requestedType))
         .map((resource) => projectInventoryResourceRow(resource))
         .sort((a, b) => `${String(a.cluster)}\u0000${String(a.ns ?? "")}\u0000${String(a.name)}`.localeCompare(`${String(b.cluster)}\u0000${String(b.ns ?? "")}\u0000${String(b.name)}`));
-      setView({ status: fulfilled.length > 0 ? "ready" : "unavailable", rows, key });
+      setView(fulfilled.length > 0
+        ? { status: "ready", rows, key }
+        : { ...demoRcaInventoryView(requestedType, demoResolved), key });
     });
     return () => controller.abort();
-  }, [key]);
+  }, [demoResolved, key]);
   if (!key || ids.length === 0) return { status: "ready", rows: [] };
   return view.key === key ? view : { status: "loading", rows: [] };
 }
@@ -175,11 +191,13 @@ export function useInventoryKindCounts(
           if (controller.signal.aborted) return;
           remaining -= 1;
           if (remaining === 0) {
-            setView({ status: anyReady ? "ready" : "unavailable", meta });
+            setView(anyReady ? { status: "ready", meta } : DEMO_RCA_KIND_COUNTS);
           }
         });
     }
     return () => controller.abort();
   }, [key]);
-  return view;
+  return view.status === "unavailable" && clusterIds.includes(DEMO_RCA_CLUSTER_ID)
+    ? DEMO_RCA_KIND_COUNTS
+    : view;
 }

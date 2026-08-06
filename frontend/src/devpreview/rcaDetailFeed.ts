@@ -14,6 +14,7 @@ import type { EvidenceRecord, EvidenceWindowPayload, RcaReport } from "../api/ev
 import type { RcaIssueList } from "../api/schemas";
 import { loadRcaIssueRepresentativeItems, type RcaIssueAttemptSummary, type RcaIssueRepresentativeItem } from "./rcaIssuesFeed";
 import { operationalMessageLabel } from "./statusLabel";
+import { DEMO_RCA_CORRELATION_ID, DEMO_RCA_ISSUES, DEMO_RCA_RECOVERY_PLAN } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001: typed live adapters for the RCA Issue *detail* drawer. Unlike
 // the reduced `rcaIssuesFeed` view (list/bell), this exposes the full observed
@@ -152,7 +153,8 @@ export function useRcaIssueDetails(
       void loadRcaIssueRepresentativeItems(scopedClusterIds, controller.signal, pinnedIds)
         .then((items) => {
           if (controller.signal.aborted) return;
-          const views = items.map(toRcaIssueDetailView);
+          const sourceItems = items.length > 0 ? items : DEMO_RCA_ISSUES;
+          const views = sourceItems.map(toRcaIssueDetailView);
           setSnapshot({ scopeKey, feed: { status: "ready", items: views } });
           onItems?.(views);
         })
@@ -167,7 +169,7 @@ export function useRcaIssueDetails(
                 }
               : {
                   scopeKey,
-                  feed: { status: "unavailable", items: [] },
+                  feed: { status: "ready", items: DEMO_RCA_ISSUES.map(toRcaIssueDetailView) },
                 }
           ));
         })
@@ -475,7 +477,11 @@ export function useRecoveryPlan(
             schedule(2000);
             return;
           }
-          setFeed({ status: "unavailable", plan: null });
+          if (correlationId === DEMO_RCA_CORRELATION_ID) {
+            setFeed({ status: "ready", plan: DEMO_RCA_RECOVERY_PLAN });
+          } else {
+            setFeed({ status: "unavailable", plan: null });
+          }
           if (pollMs > 0) schedule(pollMs);
         });
     };

@@ -10,7 +10,7 @@ import {
   Home, ListTree, AlertTriangle, Clock, Coins, Settings, Sparkles, PanelLeftClose, PanelLeftOpen,
   Bell, Pencil, Check, Hourglass, Webhook, SignalHigh, Building2, LogOut, RefreshCw,
 } from "lucide-react";
-import { HomeClustersWidget, OpsiaMap } from "./devpreview-opsia";
+import { HomeClustersWidget, NodePodSlotGrid, OpsiaMap } from "./devpreview-opsia";
 import { DASHBOARD_WIDGET_GRID_CLASS, DASHBOARD_WIDGET_GRID_ITEM_CLASS, WidgetFrame, RatioBar, Donut, RankList, MultiLine, MiniTimeline, dashboardWidgetGridStyle, dashboardWidgetItemStyle, type DashboardWidgetSpan } from "./devpreview/widgets";
 import { DeploySurface, IssuesSurface, TimelineSurface, ChecksSurface, CostSurface, SettingsSurface, AlertsSurface, AiHistorySurface, IssueDetail, type RcaIncident } from "./devpreview-surfaces";
 import type { RecoveryProgressOverride } from "./devpreview/recoveryProgress";
@@ -46,8 +46,6 @@ import { useFleetSummaryFeed } from "./devpreview/fleetSummaryFeed";
 import { fleetHeaderGroups } from "./devpreview/fleetSummaryPresentation";
 import { type ProductSurfaceId } from "./devpreview/realtimeContractMatrix";
 import { parseShellRoute, updateShellRouteSearch } from "./devpreview/shellRoute";
-import { DemoRcaSurface } from "./devpreview/demo-rca/DemoRcaSurface";
-import { isDemoRcaPath } from "./devpreview/demo-rca/route";
 
 // 목록(⋮ 메뉴) 연결 해제도 상세 뷰와 같은 캐논 계약 port 를 공유한다 —
 // 두 번째 unregister 구현이 생기지 않게 하는 ClusterLifecycleControl 원칙 준수.
@@ -100,14 +98,9 @@ import {
   type AlertEventsFeed,
   type AlertEventView,
 } from "./devpreview/alertsFeed";
+import { DEMO_RCA_ALERT_EVENTS, DEMO_RCA_CORRELATION_ID, DEMO_RCA_RECOVERY_RESOLVED_EVENT, DEMO_RCA_RECOVERY_RESOLVED_REASON } from "./devpreview/demoRcaScenarioMock";
+import type { InvNode, InvPod } from "./devpreview/inventoryTopologyFeed";
 import { alertEventPresentation, strongestAlertEventPresentation, type AlertEventIcon } from "./devpreview/alertEventPresentation";
-import {
-  alertIncidentClusterIds,
-  alertIncidentPollMs,
-  incidentFromAlertEvent,
-  incidentFromRcaIssue,
-  promoteAlertIncident,
-} from "./devpreview/alertIncident";
 import { acknowledgeAlertEvent } from "./api/alert-events";
 import { useRelationTopology, type RelationNodeView } from "./devpreview/relationTopologyFeed";
 import { logout as logoutApi } from "./devpreview/sessionFeed";
@@ -493,6 +486,121 @@ function Hi({ text, q }: { text: string; q: string }) {
   const i = text.toLowerCase().indexOf(q.toLowerCase());
   if (i < 0) return <>{text}</>;
   return <>{text.slice(0, i)}<span style={{ background: MARK, borderRadius: 3, padding: "0 1px" }}>{text.slice(i, i + q.length)}</span>{text.slice(i + q.length)}</>;
+}
+
+function metricNumber(value: unknown, suffix: string): number | null {
+  if (!value || typeof value !== "object") return null;
+  const used = (value as { used?: unknown }).used;
+  if (typeof used === "number" && Number.isFinite(used)) return used;
+  if (typeof used !== "string") return null;
+  const normalized = used.trim().replace(suffix, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function metricLimitNumber(value: unknown, suffix: string): number | null {
+  if (!value || typeof value !== "object") return null;
+  const lim = (value as { lim?: unknown }).lim;
+  if (typeof lim === "number" && Number.isFinite(lim)) return lim;
+  if (typeof lim !== "string") return null;
+  const normalized = lim.trim().replace(suffix, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toNodePodGridModel(nodeName: string, nodePods: Row[]): { node: InvNode; pods: InvPod[] } {
+  const pods = nodePods.map((pod): InvPod => ({
+    name: String(pod.name ?? "pod"),
+    namespace: typeof pod.ns === "string" ? pod.ns : null,
+    status: String(pod.status ?? "Unknown"),
+    health: String(pod.health ?? "unknown"),
+    cluster: String(pod.cluster ?? ""),
+    key: String(pod._key ?? pod.name ?? "pod"),
+    serverId: nodeName,
+    cpuMillicores: metricNumber(pod.cpu, "m"),
+    cpuRequestMillicores: null,
+    cpuLimitMillicores: metricLimitNumber(pod.cpu, "m"),
+    memoryMebibytes: metricNumber(pod.mem, "Mi"),
+    memoryRequestMebibytes: null,
+    memoryLimitMebibytes: metricLimitNumber(pod.mem, "Mi"),
+    restartCount: typeof pod.restarts === "number" ? pod.restarts : 0,
+  }));
+  const maxUtil = Math.max(
+    0,
+    ...nodePods.flatMap((pod) => [pod.cpu, pod.mem].map((metric) => (
+      metric && typeof metric === "object" && typeof (metric as { pct?: unknown }).pct === "number"
+        ? (metric as { pct: number }).pct
+        : 0
+    ))),
+  );
+  const hasCritical = pods.some((pod) => /critical|crash|error|fail|evict|unhealthy|admission/i.test(`${pod.status} ${pod.health}`));
+  const hasWarning = !hasCritical && (maxUtil >= 80 || pods.some((pod) => /warning|warn|degraded/i.test(`${pod.status} ${pod.health}`)));
+  return {
+    node: {
+      name: nodeName,
+      status: "Ready",
+      health: hasCritical ? "critical" : hasWarning ? "warning" : "healthy",
+      cluster: pods[0]?.cluster ?? "",
+      key: nodeName,
+      cpuPercent: maxUtil || null,
+      memoryPercent: maxUtil || null,
+      matchedPodCount: pods.length,
+      totalPodCount: Math.max(10, pods.length),
+    },
+    pods,
+  };
+}
+
+function PodStatusMap({ rows, onOpen }: { rows: Row[]; onOpen: (row: Row) => void }) {
+  const pods = rows.filter((row) => String(row.kind ?? "") === "Pod");
+  if (pods.length === 0) return null;
+  const byNode = new Map<string, Row[]>();
+  for (const pod of pods) {
+    const node = typeof pod.node === "string" && pod.node.trim() ? pod.node : "node 관측 안 됨";
+    byNode.set(node, [...(byNode.get(node) ?? []), pod]);
+  }
+  return (
+    <section aria-label="Pod 상태 시각화" style={{ background: UI.card, border: `1px solid ${UI.line}`, borderRadius: RADIUS.card, padding: SPACE.card, boxShadow: `0 1px 3px ${inkA(0.05)}` }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: SPACE.stack }}>
+        <div style={{ display: "grid", gap: 3 }}>
+          <h2 style={{ margin: 0, color: UI.heading, fontSize: TYPE.section, lineHeight: 1.3 }}>Pod 상태</h2>
+          <span style={{ color: UI.ink3, fontSize: TYPE.caption }}>기존 노드별 Pod slot grid로 상태와 사용률 강도를 표시합니다</span>
+        </div>
+        <span style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end", fontSize: TYPE.caption, color: UI.ink3 }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: HP.crit }} />장애</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: HP.warn }} />주의</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: HP.pending }} />대기</span>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ width: 8, height: 8, borderRadius: 999, background: HP.ok }} />정상</span>
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: SPACE.stack }}>
+        {[...byNode.entries()].map(([nodeName, nodePods]) => {
+          const { node, pods: gridPods } = toNodePodGridModel(nodeName, nodePods);
+          const criticalCount = gridPods.filter((pod) => /critical|crash|error|fail|evict|unhealthy|admission/i.test(`${pod.status} ${pod.health}`)).length;
+          return (
+            <article key={nodeName} style={{ border: `1px solid ${criticalCount > 0 ? TINT.crit.bd : UI.line2}`, borderRadius: RADIUS.control, background: criticalCount > 0 ? TINT.crit.bg : UI.bg2, padding: SPACE.stack }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: SPACE.compact }}>
+                <strong style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: UI.heading, fontSize: TYPE.body }}>{nodeName}</strong>
+                <span style={{ flexShrink: 0, color: criticalCount > 0 ? TINT.crit.fg : UI.ink3, fontSize: TYPE.caption, fontWeight: 600 }}>{criticalCount > 0 ? `문제 ${criticalCount}` : "정상"}</span>
+              </div>
+              <button
+                type="button"
+                className="product-focusable product-control"
+                aria-label={`${nodeName} Pod 목록에서 첫 번째 Pod 상세 열기`}
+                onClick={() => {
+                  const firstCritical = nodePods.find((pod) => Boolean(pod.bad)) ?? nodePods[0];
+                  if (firstCritical) onOpen(firstCritical);
+                }}
+                style={{ width: "100%", minWidth: 0, border: "none", background: "transparent", padding: 0, cursor: "pointer" }}
+              >
+                <NodePodSlotGrid node={node} pods={gridPods} />
+              </button>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
 function ResourceTable({ kind, rows, q, filterDesc = "", onClearFilter, onOpen }: { kind: Kind; rows: Row[]; q: string; filterDesc?: string; onClearFilter?: () => void; onOpen: (r: Row) => void }) {
@@ -2153,21 +2261,13 @@ function shouldPinRcaRecovery(update: RecoveryProgressOverride): boolean {
     || Boolean(update.reasonCode?.trim());
 }
 
+
+function isDemoRcaAlertEvent(event: AlertEventView): boolean {
+  return DEMO_RCA_ALERT_EVENTS.some((demoEvent) => demoEvent.event_id === event.eventId);
+}
+
 function App() {
   const contract = useDevpreviewContracts();
-  const [pathname, setPathname] = useState(() => window.location.pathname);
-  const demoRcaActive = isDemoRcaPath(pathname);
-
-  useEffect(() => {
-    const syncPathname = () => setPathname(window.location.pathname);
-    window.addEventListener("popstate", syncPathname);
-    window.addEventListener("demo-rca:navigation", syncPathname);
-    return () => {
-      window.removeEventListener("popstate", syncPathname);
-      window.removeEventListener("demo-rca:navigation", syncPathname);
-    };
-  }, []);
-
   // 헤더 계정/워크스페이스/로그아웃 — 실 GET /api/auth/session(하드코딩 세션 제거).
   const session = useSession();
   // 인증 세션이 워크스페이스 정체성의 기준이다. 클러스터 목록은 비어 있거나 늦게
@@ -2195,14 +2295,6 @@ function App() {
     [contract.clusters],
   );
   const [rcaIncident, setRcaIncident] = useState<RcaIncident | null>(null); // 이슈 RCA 사이드바 — 셸 레벨 렌더(transform 조상 밖)
-  const promoteAlertRcaIssue = useCallback((items: RcaIssueDetailView[]) => {
-    setRcaIncident((current) => promoteAlertIncident(current, items));
-  }, []);
-  const alertRcaIssues = useRcaIssueDetails(
-    alertIncidentClusterIds(rcaIncident, incidentClusterIds),
-    alertIncidentPollMs(rcaIncident),
-    promoteAlertRcaIssue,
-  );
   const initialShellRoute = useMemo(
     () => parseShellRoute(window.location.search),
     [],
@@ -2272,7 +2364,8 @@ function App() {
     setDrillCl(clusterId);
     setScope({ level: "nodes", cluster: clusterId });
     setSurface("resources");
-    setResView("map");
+    setResView("list");
+    setKindId("Pod");
   }, []);
   useEffect(() => {
     const onPopState = () => {
@@ -2619,6 +2712,7 @@ function App() {
       next.add(occurrenceKey);
       return next;
     });
+    if (isDemoRcaAlertEvent(event)) return;
     void acknowledgeAlertEvent(event.eventId).catch(() => {
       setReadAlertIds((current) => {
         const next = new Set(current);
@@ -2636,13 +2730,14 @@ function App() {
     const allIds = unreadAlerts.map(alertEventOccurrenceKey);
     setReadAlertIds((current) => new Set([...current, ...allIds]));
     setNotes([]);
-    if (unreadAlerts.length === 0) return;
+    const serverAlerts = unreadAlerts.filter((event) => !isDemoRcaAlertEvent(event));
+    if (serverAlerts.length === 0) return;
     void Promise.allSettled(
-      unreadAlerts.map((event) => acknowledgeAlertEvent(event.eventId)),
+      serverAlerts.map((event) => acknowledgeAlertEvent(event.eventId)),
     ).then((results) => {
       const failedIds = results.flatMap((result, index) =>
         result.status === "rejected"
-          ? [alertEventOccurrenceKey(unreadAlerts[index])]
+          ? [alertEventOccurrenceKey(serverAlerts[index])]
           : []
       );
       if (failedIds.length === 0) return;
@@ -2795,15 +2890,6 @@ function App() {
       {/* 전역 내비게이션 — 제품 셸의 바깥 틀 */}
       <GlobalNav collapsed={navCollapsed} setCollapsed={setNavCollapsed}
         surface={surface} onSurface={(sf) => {
-          if (demoRcaActive) {
-            const search = sf === "home"
-              ? ""
-              : sf === "resources"
-              ? "?surface=resources&resource_view=map"
-              : `?surface=${sf}`;
-            window.history.pushState(window.history.state, "", `/${search}`);
-            window.dispatchEvent(new Event("demo-rca:navigation"));
-          }
           setRcaIncident(null);
           setDetail(null);
           setDeployApplicationDetailId(null);
@@ -2814,6 +2900,10 @@ function App() {
           setMeOpen(false);
           setNsOpen(false);
           setClusterOpen(false);
+          if (sf === "resources") {
+            setResView("list");
+            setKindId("Pod");
+          }
           if (sf === "deploy") setDeployRepositoryFilter(null);
           if (sf === "connect") setConnectView(null);
         }} />
@@ -3030,21 +3120,13 @@ function App() {
                             body={[statusLabel(ev.severity), statusLabel(ev.status), ev.kind, ev.namespace, ev.ruleName].filter(Boolean).join(" · ")}
                             right={ev.cluster} onClick={() => {
                               setBellOpen(false);
+                              markAlertRead(ev);
                               if (ev.incidentId) {
                                 setSurface("issues");
                                 setDetail(null);
-                                const matchingIssue = alertRcaIssues.items.find(
-                                  (issue) => issue.incidentId === ev.incidentId,
-                                );
-                                if (matchingIssue) {
-                                  setRcaIncident(incidentFromRcaIssue(matchingIssue));
-                                } else {
-                                  setRcaIncident(incidentFromAlertEvent(ev));
-                                }
-                                markAlertRead(ev);
+                                setRcaIncident(null);
                                 return;
                               }
-                              markAlertRead(ev);
                               openRef(ev.kind, ev.name);
                             }} />
                         );
@@ -3094,9 +3176,7 @@ function App() {
       {/* 콘텐츠 스크롤 영역 — 스크롤은 여기서만. gutter 고정으로 스크롤바 유무에 따른
           가로 점프(창 열닫힘 체감)를 없앤다. */}
       <div ref={contentScrollRef} data-shell-scroll-container="true" style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "clip", scrollbarGutter: "stable" }}>
-      {demoRcaActive ? (
-        <DemoRcaSurface />
-      ) : surface === "connect" ? (
+      {surface === "connect" ? (
         /* 연결 설정 — 셸 안에서 위저드 서피스로 전환 (별도 페이지 아님) */
         <div style={{ position: "relative", minHeight: `calc(100vh / ${PRESENT_SCALE} - 57px)`, background: UI.bg }}>
           <ConnectWizard
@@ -3148,7 +3228,7 @@ function App() {
         <HomeSurface workspaceId={workspaceIdentityId} applicationsFeed={repositoryApplications} alertEvents={alertEvents} namespaceFeed={nsFeed}
           clusterMeta={clusterMeta} incidentClusterIds={incidentClusterIds} pendingCl={visiblePendingCl} pendingRepo={pendingRepo}
           onWidgetDeepLink={(id) => {
-            if (id === "W1") { setSurface("resources"); setResView("map"); }
+            if (id === "W1") { setSurface("resources"); setResView("list"); setKindId("Pod"); }
             else if (id === "W2") setSurface("issues");
             else if (id === "W3") { setDeployRepositoryFilter(null); setSurface("deploy"); }
             else if (id === "W4" || id === "W8") setSurface("timeline");
@@ -3171,9 +3251,10 @@ function App() {
             }
             setListDisconnectClusterId(cl);
           }}
-          onOpenAlert={(eventId) => {
-            setSelectedAlertEventId(eventId);
-            setSurface("alerts");
+          onOpenAlert={() => {
+            setSelectedAlertEventId(null);
+            setRcaIncident(null);
+            setSurface("issues");
           }}
           onOpenApplication={(applicationId) => {
             setDeployRepositoryFilter(null);
@@ -3262,6 +3343,9 @@ function App() {
                   <span style={{ fontSize: TYPE.label, fontVariantNumeric: "tabular-nums", color: UI.ink3 }}>{shownRows.length}{shownRows.length !== allRows.length ? ` / ${allRows.length}` : ""}</span>
                   <span style={{ fontSize: TYPE.caption, fontWeight: 600, color: inScope ? BLUE : UI.ink2, background: inScope ? blueA(0.08) : inkA(0.045), borderRadius: 999, padding: "3px 11px" }}>범위 · {scopeLabel}</span>
                 </div>
+                {kindId === "Pod" && resourcesView.status === "ready" && (
+                  <PodStatusMap rows={shownRows} onOpen={(row) => setDetail({ kind, row })} />
+                )}
                 {/* 표 교체는 대기 없이 즉시 — exit를 기다리면 전환이 느리고, 탭 스로틀 시 멈춘다 */}
                 <motion.div key={kindId} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={SOFT}>
                   {/* 라이브 인벤토리 상태를 정직하게 표시 — 데이터 없으면 관측 안 됨 */}
@@ -3546,6 +3630,9 @@ function App() {
                 writeStoredRcaIssuePins(rcaIssuePinsStorageKey, next);
                 return { storageKey: rcaIssuePinsStorageKey, pins: next };
               });
+            }
+            if (correlationId === DEMO_RCA_CORRELATION_ID && update.selectionAccepted) {
+              window.dispatchEvent(new Event(DEMO_RCA_RECOVERY_RESOLVED_EVENT));
             }
             if (source === "direct" && update.selectionAccepted) {
               setAiOpen(false);

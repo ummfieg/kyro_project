@@ -73,6 +73,7 @@ import { issueAnalysisState } from "./devpreview/issueAnalysisState";
 import { canOpenRecoveryPlan, canStartRecoveryReview } from "./devpreview/recoveryAccess";
 import { pullRequestReference } from "./devpreview/pullRequestReference";
 import { isSafePrRoute, recoveryRouteLabel } from "./devpreview/recoveryRoute";
+import { DEMO_RCA_CORRELATION_ID, DEMO_RCA_RECOVERY_RESOLVED_REASON } from "./devpreview/demoRcaScenarioMock";
 import {
   evidencePreviewLines,
   evidenceReferenceMatches,
@@ -2012,6 +2013,24 @@ export function IssueDetail({ name, symptom, rawSymptom, cluster, svc, ns, resou
       reasonCode: null,
     }, source);
     try {
+      if (correlationId === DEMO_RCA_CORRELATION_ID) {
+        await new Promise((resolve) => window.setTimeout(resolve, 650));
+        setSelectedRecoveryActionId(actionId);
+        setRecoverySelectionAccepted(true);
+        onRecoverySelected?.(correlationId, {
+          actionRoute: "auto",
+          selectionPending: false,
+          selectionAccepted: true,
+          selectionFailed: false,
+          reasonCode: DEMO_RCA_RECOVERY_RESOLVED_REASON,
+        }, source);
+        return {
+          accepted: true,
+          correlation_id: correlationId,
+          event_id: "demo-recovery-auto-completed",
+          command_id: "demo-auto-recovery",
+        };
+      }
       const receipt = await selectRecoveryAction(correlationId, recovery.plan.plan_id, actionId);
       if (!receipt.accepted) throw new Error("recovery selection was not accepted");
       setSelectedRecoveryActionId(actionId);

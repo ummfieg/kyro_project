@@ -4,6 +4,7 @@ import { listRcaIssues } from "../api/rca-issues";
 import type { RcaIssueList } from "../api/schemas";
 import type { DevpreviewCluster } from "./contracts";
 import { useVisibleRefreshClock } from "../shared/data/useVisibleRefreshClock";
+import { DEMO_RCA_ISSUES } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §5.2: typed live adapter for the Issue widget/surface and the
 // notification bell. Reads the additive RCA Issue queue from
@@ -190,12 +191,26 @@ async function loadRcaIssueCandidateItems(
   const requests = scopedClusterIds === null
     ? [listRcaIssues({ limit: 100, signal })]
     : scopedClusterIds.map((clusterId) => listRcaIssues({ clusterId, limit: 100, signal }));
-  const responses = await Promise.all(requests);
+  let responses: Awaited<ReturnType<typeof listRcaIssues>>[];
+  try {
+    responses = await Promise.all(requests);
+  } catch (cause) {
+    if (signal.aborted) throw cause;
+    return DEMO_RCA_ISSUES.filter((item) => (
+      allowedClusterFilter(scopedClusterIds, item.cluster_id)
+    ));
+  }
   const allowedClusters = scopedClusterIds === null ? null : new Set(scopedClusterIds);
   const candidates = responses
     .flatMap((response) => response.items)
     .filter((item) => allowedClusters === null || (item.cluster_id !== null && allowedClusters.has(item.cluster_id)));
-  return candidates;
+  return candidates.length > 0
+    ? candidates
+    : DEMO_RCA_ISSUES.filter((item) => allowedClusterFilter(scopedClusterIds, item.cluster_id));
+}
+
+function allowedClusterFilter(scopedClusterIds: readonly string[] | null, clusterId: string | null): boolean {
+  return scopedClusterIds === null || (clusterId !== null && scopedClusterIds.includes(clusterId));
 }
 
 export async function loadActiveRcaIssueItems(
