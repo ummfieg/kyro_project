@@ -13,6 +13,8 @@ export const DEMO_RCA_POD_NAME = "api-server-d6cdf99b-74fsd";
 export const DEMO_RCA_DEPLOYMENT_NAME = "api-server";
 export const DEMO_RCA_CORRELATION_ID = "demo-rca-battle-ops-api-server";
 export const DEMO_RCA_INCIDENT_ID = "demo-incident-admission-failure";
+export const DEMO_RCA_ALERT_EVENT_ID = "demo-alert-admission-failure";
+export const DEMO_RCA_ALERT_FIRED_EVENT = "demo-rca:alert-fired";
 export const DEMO_RCA_RECOVERY_RESOLVED_EVENT = "demo-rca:recovery-resolved";
 export const DEMO_RCA_RECOVERY_RESOLVED_REASON = "demo_auto_resolved";
 
@@ -260,8 +262,8 @@ export const DEMO_RCA_NAMESPACES: InventoryNamespacesView = {
   ],
 };
 
-export const DEMO_RCA_ISSUES: RcaIssueItem[] = [
-  {
+export function buildDemoRcaIssues(updatedAt = new Date()): RcaIssueItem[] {
+  return [{
     workspace_id: "default",
     correlation_id: DEMO_RCA_CORRELATION_ID,
     cluster_id: DEMO_RCA_CLUSTER_ID,
@@ -289,7 +291,7 @@ export const DEMO_RCA_ISSUES: RcaIssueItem[] = [
     command_id: null,
     pr_url: null,
     error_reason: null,
-    updated_at: "2026-08-04T10:13:24+09:00",
+    updated_at: updatedAt.toISOString(),
     issue_severity: "critical",
     severity_availability: "available",
     severity_reason_code: null,
@@ -298,8 +300,10 @@ export const DEMO_RCA_ISSUES: RcaIssueItem[] = [
     evidence_summary: "입장 실패율, capacity 로그, Deployment 이벤트가 같은 시간대에 맞물려 있습니다.",
     evidence_bundle_summary: "Metrics, Logs, Events, Deploy Changes 기준으로 RCA evidence bundle을 구성했습니다.",
     recovery_reason_code: "safe_pr_required",
-  },
-];
+  }];
+}
+
+export const DEMO_RCA_ISSUES: RcaIssueItem[] = buildDemoRcaIssues(new Date("2026-08-04T10:13:24+09:00"));
 
 export const DEMO_RCA_RECOVERY_PLAN: RecoveryPlan = {
   plan_id: "demo-plan-restore-lobby-replicas",
@@ -347,9 +351,11 @@ export const DEMO_RCA_RECOVERY_PLAN: RecoveryPlan = {
   lifecycle: null,
 };
 
-export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = [
-  {
-    event_id: "demo-alert-admission-failure",
+export function buildDemoRcaAlertEvents(firedAt = new Date()): AlertEvent[] {
+  const firedAtIso = firedAt.toISOString();
+  const promotedAtIso = new Date(firedAt.getTime() + 6_000).toISOString();
+  return [{
+    event_id: DEMO_RCA_ALERT_EVENT_ID,
     rule_id: "demo-rule-admission-failure",
     rule_name: "api-server admission failure",
     source: "incident",
@@ -360,7 +366,7 @@ export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = [
       kind: "Deployment",
       name: DEMO_RCA_DEPLOYMENT_NAME,
     },
-    fired_at: "2026-08-04T10:13:24+09:00",
+    fired_at: firedAtIso,
     resolved_at: null,
     status: "firing",
     observed_value: 34.7,
@@ -369,7 +375,7 @@ export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = [
       {
         type: "metric",
         metric: "admission_failure_rate",
-        observed_at: "2026-08-04T10:13:24+09:00",
+        observed_at: firedAtIso,
         subject: {
           cluster: DEMO_RCA_CLUSTER_ID,
           namespace: DEMO_RCA_NAMESPACE,
@@ -384,10 +390,12 @@ export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = [
     incident_id: DEMO_RCA_INCIDENT_ID,
     acknowledged_at: null,
     acknowledged_by: null,
-    promoted_at: "2026-08-04T10:13:30+09:00",
+    promoted_at: promotedAtIso,
     promoted_by: "demo",
-  },
-];
+  }];
+}
+
+export const DEMO_RCA_ALERT_EVENTS: AlertEvent[] = buildDemoRcaAlertEvents(new Date("2026-08-04T10:13:24+09:00"));
 
 
 export const DEMO_RCA_APPLICATIONS: ApplicationView[] = [

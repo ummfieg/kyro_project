@@ -6,7 +6,12 @@ import { listAlertEvents, subscribeAlertEvents } from "../api/alert-events";
 import type { AlertEvent } from "../api/alert-events-schemas";
 import { listAlertRules } from "../api/alert-rules";
 import type { AlertRule } from "../api/alert-rules-schemas";
-import { DEMO_RCA_ALERT_EVENTS, DEMO_RCA_RECOVERY_RESOLVED_EVENT } from "./demoRcaScenarioMock";
+import {
+  DEMO_RCA_ALERT_EVENT_ID,
+  DEMO_RCA_ALERT_FIRED_EVENT,
+  DEMO_RCA_RECOVERY_RESOLVED_EVENT,
+  buildDemoRcaAlertEvents,
+} from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §2 "Alerts": typed live adapters for the /alerts surface.
 // Reads `GET /api/alert-events` (fired/resolved events), `GET /api/alert-rules`
@@ -106,18 +111,24 @@ export function useAlertEvents(): AlertEventsFeed {
   useEffect(() => {
     const controller = new AbortController();
     let demoAlertEnabled = false;
+    let demoAlertEvents: AlertEvent[] = [];
     const demoAlertTimer = window.setTimeout(() => {
       if (controller.signal.aborted) return;
       demoAlertEnabled = true;
+      const firedAt = new Date();
+      demoAlertEvents = buildDemoRcaAlertEvents(firedAt);
+      window.dispatchEvent(new CustomEvent(DEMO_RCA_ALERT_FIRED_EVENT, {
+        detail: { firedAt: firedAt.toISOString() },
+      }));
       setFeed((current) => current.items.length > 0
         ? current
-        : { status: "ready", items: DEMO_RCA_ALERT_EVENTS.map(toEventView), transport: current.transport === "connecting" ? "http" : current.transport });
+        : { status: "ready", items: demoAlertEvents.map(toEventView), transport: current.transport === "connecting" ? "http" : current.transport });
     }, 5_000);
     const clearDemoAlert = () => {
       demoAlertEnabled = false;
       setFeed((current) => ({
         ...current,
-        items: current.items.filter((item) => !DEMO_RCA_ALERT_EVENTS.some((event) => event.event_id === item.eventId)),
+        items: current.items.filter((item) => item.eventId !== DEMO_RCA_ALERT_EVENT_ID),
       }));
     };
     window.addEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, clearDemoAlert);
@@ -126,7 +137,7 @@ export function useAlertEvents(): AlertEventsFeed {
       if (!controller.signal.aborted) {
         setFeed({
           status: "ready",
-          items: events.length > 0 ? events.map(toEventView) : demoAlertEnabled ? DEMO_RCA_ALERT_EVENTS.map(toEventView) : [],
+          items: events.length > 0 ? events.map(toEventView) : demoAlertEnabled ? demoAlertEvents.map(toEventView) : [],
           transport: "http",
         });
       }
@@ -138,7 +149,7 @@ export function useAlertEvents(): AlertEventsFeed {
         if (controller.signal.aborted || isAbortError(cause)) return;
         setFeed({
           status: "ready",
-          items: demoAlertEnabled ? DEMO_RCA_ALERT_EVENTS.map(toEventView) : [],
+          items: demoAlertEnabled ? demoAlertEvents.map(toEventView) : [],
           transport: "stale",
         });
       }

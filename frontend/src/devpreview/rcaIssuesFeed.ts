@@ -4,7 +4,7 @@ import { listRcaIssues } from "../api/rca-issues";
 import type { RcaIssueList } from "../api/schemas";
 import type { DevpreviewCluster } from "./contracts";
 import { useVisibleRefreshClock } from "../shared/data/useVisibleRefreshClock";
-import { DEMO_RCA_ISSUES } from "./demoRcaScenarioMock";
+import { DEMO_RCA_ALERT_FIRED_EVENT, DEMO_RCA_RECOVERY_RESOLVED_EVENT, buildDemoRcaIssues } from "./demoRcaScenarioMock";
 
 // UI-PHASE2-001 §5.2: typed live adapter for the Issue widget/surface and the
 // notification bell. Reads the additive RCA Issue queue from
@@ -32,6 +32,7 @@ export interface RcaIssuesFeed {
 export type RcaIssueItem = RcaIssueList["items"][number];
 export const RCA_ISSUES_REFRESH_MS = 10_000;
 export const RCA_RECENT_ATTEMPT_LIMIT = 3;
+let demoRcaIssueFiredAt: Date | null = null;
 
 export interface RcaIssueAttemptSummary {
   correlationId: string;
@@ -116,8 +117,9 @@ export function rcaIssueIdentity(item: Pick<RcaIssueItem,
 export async function loadRcaIssueItems(
   clusterIds: readonly string[] | undefined,
   signal: AbortSignal,
+  demoFallbackAt: Date | null = null,
 ): Promise<RcaIssueItem[]> {
-  const representatives = await loadRcaIssueRepresentativeItems(clusterIds, signal);
+  const representatives = await loadRcaIssueRepresentativeItems(clusterIds, signal, [], demoFallbackAt);
   return representatives.map((representative) => representative.item);
 }
 
@@ -125,8 +127,9 @@ export async function loadRcaIssueRepresentativeItems(
   clusterIds: readonly string[] | undefined,
   signal: AbortSignal,
   pinnedCorrelationIds: readonly string[] = [],
+  demoFallbackAt: Date | null = null,
 ): Promise<RcaIssueRepresentativeItem[]> {
-  const candidates = await loadRcaIssueCandidateItems(clusterIds, signal);
+  const candidates = await loadRcaIssueCandidateItems(clusterIds, signal, demoFallbackAt);
   return selectRcaIssueRepresentativeItems(candidates, pinnedCorrelationIds);
 }
 
@@ -184,6 +187,7 @@ export function selectRcaIssueRepresentativeItems(
 async function loadRcaIssueCandidateItems(
   clusterIds: readonly string[] | undefined,
   signal: AbortSignal,
+  demoFallbackAt: Date | null,
 ): Promise<RcaIssueItem[]> {
   const scopedClusterIds = clusterIds === undefined
     ? null
@@ -196,7 +200,8 @@ async function loadRcaIssueCandidateItems(
     responses = await Promise.all(requests);
   } catch (cause) {
     if (signal.aborted) throw cause;
-    return DEMO_RCA_ISSUES.filter((item) => (
+    if (demoFallbackAt === null) return [];
+    return buildDemoRcaIssues(demoFallbackAt).filter((item) => (
       allowedClusterFilter(scopedClusterIds, item.cluster_id)
     ));
   }
@@ -206,7 +211,9 @@ async function loadRcaIssueCandidateItems(
     .filter((item) => allowedClusters === null || (item.cluster_id !== null && allowedClusters.has(item.cluster_id)));
   return candidates.length > 0
     ? candidates
-    : DEMO_RCA_ISSUES.filter((item) => allowedClusterFilter(scopedClusterIds, item.cluster_id));
+    : demoFallbackAt === null
+      ? []
+      : buildDemoRcaIssues(demoFallbackAt).filter((item) => allowedClusterFilter(scopedClusterIds, item.cluster_id));
 }
 
 function allowedClusterFilter(scopedClusterIds: readonly string[] | null, clusterId: string | null): boolean {
@@ -216,8 +223,9 @@ function allowedClusterFilter(scopedClusterIds: readonly string[] | null, cluste
 export async function loadActiveRcaIssueItems(
   clusterIds: readonly string[] | undefined,
   signal: AbortSignal,
+  demoFallbackAt: Date | null = null,
 ): Promise<RcaIssueItem[]> {
-  const items = await loadRcaIssueItems(clusterIds, signal);
+  const items = await loadRcaIssueItems(clusterIds, signal, demoFallbackAt);
   // Resolve/close is applied after identity reduction: the newest terminal
   // row ends every older correlation for that same active incident.
   return items.filter(isActiveRcaIssue);
@@ -254,11 +262,32 @@ export function useRcaIssues(clusterIds?: readonly string[]): RcaIssuesFeed {
     scopeKey,
     feed: { status: "loading", items: [] },
   });
+  const [demoIssueAt, setDemoIssueAt] = useState<Date | null>(() => demoRcaIssueFiredAt);
   const { revision } = useVisibleRefreshClock(true, RCA_ISSUES_REFRESH_MS);
+  useEffect(() => {
+    const onDemoAlertFired = (event: Event) => {
+      const firedAt = event instanceof CustomEvent && typeof event.detail?.firedAt === "string"
+        ? new Date(event.detail.firedAt)
+        : new Date();
+      const next = Number.isFinite(firedAt.getTime()) ? firedAt : new Date();
+      demoRcaIssueFiredAt = next;
+      setDemoIssueAt(next);
+    };
+    const onDemoRecoveryResolved = () => {
+      demoRcaIssueFiredAt = null;
+      setDemoIssueAt(null);
+    };
+    window.addEventListener(DEMO_RCA_ALERT_FIRED_EVENT, onDemoAlertFired);
+    window.addEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, onDemoRecoveryResolved);
+    return () => {
+      window.removeEventListener(DEMO_RCA_ALERT_FIRED_EVENT, onDemoAlertFired);
+      window.removeEventListener(DEMO_RCA_RECOVERY_RESOLVED_EVENT, onDemoRecoveryResolved);
+    };
+  }, []);
   useEffect(() => {
     const controller = new AbortController();
     const scopedClusterIds = scopeKey === null ? null : scopeKey === "" ? [] : scopeKey.split("\u0000");
-    void loadActiveRcaIssueItems(scopedClusterIds ?? undefined, controller.signal)
+    void loadActiveRcaIssueItems(scopedClusterIds ?? undefined, controller.signal, demoIssueAt)
       .then((loadedItems) => {
         if (controller.signal.aborted) return;
         const items = loadedItems.map(toRcaIssueView);
@@ -277,7 +306,7 @@ export function useRcaIssues(clusterIds?: readonly string[]): RcaIssuesFeed {
         ));
       });
     return () => controller.abort();
-  }, [revision, scopeKey]);
+  }, [demoIssueAt, revision, scopeKey]);
   return snapshot.scopeKey === scopeKey
     ? snapshot.feed
     : { status: "loading", items: [] };

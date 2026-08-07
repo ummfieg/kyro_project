@@ -276,7 +276,7 @@ export function RankList({ rows, onPick }: {
   onPick?: (id: string) => void;
 }) {
   return (
-    <div data-rank-list-layout="contained" style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minHeight: 0, maxHeight: "100%", overflowY: "auto", overscrollBehavior: "contain", scrollbarGutter: "stable" }}>
+    <div data-rank-list-layout="contained" style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1, minHeight: 0, maxHeight: "100%", overflowY: "visible" }}>
       {rows.map((r, i) => (
         <motion.button key={r.id} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ ...SOFT, delay: i * 0.05 }}
           onClick={onPick ? () => onPick(r.id) : undefined} disabled={!onPick} className={onPick ? "rrow" : undefined}
