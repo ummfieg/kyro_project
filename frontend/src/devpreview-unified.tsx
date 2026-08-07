@@ -1774,41 +1774,28 @@ const NAV_ITEMS: { id: string; label: string; icon: typeof Home }[] = [
 const NAV_BOTTOM: { id: string; label: string; icon: typeof Home }[] = [
   { id: "settings", label: "설정", icon: Settings },
 ];
-const DEMO_RCA_NAV_SCOPE = new Set(["home", "resources", "deploy", "issues", "timeline"]);
-const DEMO_RCA_WIDGET_SCOPE = new Set(["W1", "W2", "W3", "W4", "W6", "W8", "W9", "W11", "W12"]);
 
 type Surface = ProductSurfaceId;
 const SURFACE_OF: Record<string, Surface> = { home: "home", resources: "resources", deploy: "deploy", issues: "issues", timeline: "timeline", cost: "cost", alerts: "alerts", ai: "ai", settings: "settings" };
 // 리소스 서피스의 관점(D18) — 한 서피스, 세 관점. 스코프는 관점을 넘어 보존된다.
 type ResView = "map" | "list" | "flow";
 
-function GlobalNav({ collapsed, setCollapsed, surface, onSurface, onDemoOutOfScope }: {
+function GlobalNav({ collapsed, setCollapsed, surface, onSurface }: {
   collapsed: boolean; setCollapsed: (v: boolean) => void;
   surface: Surface; onSurface: (s: Surface) => void;
-  onDemoOutOfScope?: (label: string) => void;
 }) {
   const Item = ({ it }: { it: (typeof NAV_ITEMS)[number] }) => {
     const sid = SURFACE_OF[it.id];
     const active = !!sid && surface === sid;
-    const demoOutOfScope = !DEMO_RCA_NAV_SCOPE.has(it.id);
     const enabled = active || !!sid;
-    const handleClick = sid
-      ? () => {
-        if (demoOutOfScope && !active) {
-          onDemoOutOfScope?.(it.label);
-          return;
-        }
-        onSurface(sid);
-      }
-      : undefined;
     return (
       <button type="button" className={`product-focusable product-control${enabled ? " gnav" : ""}`} title={collapsed ? it.label : undefined}
         aria-label={`${it.label} 화면으로 이동`} aria-current={active ? "page" : undefined}
-        disabled={!sid} onClick={handleClick}
+        disabled={!sid} onClick={sid ? () => onSurface(sid) : undefined}
         style={{ display: "flex", alignItems: "center", gap: 11, borderRadius: 9, padding: collapsed ? "9px 0" : "8px 11px", justifyContent: collapsed ? "center" : "flex-start",
           width: "100%", border: "none", textAlign: "left",
           background: active ? blueA(0.09) : "transparent", color: active ? BLUE : enabled ? UI.ink2 : UI.ink3,
-          opacity: demoOutOfScope && !active ? 0.42 : enabled ? 1 : 0.45, transition: "background .14s, opacity .14s", cursor: demoOutOfScope && !active ? "not-allowed" : undefined }}>
+          opacity: enabled ? 1 : 0.45, transition: "background .14s" }}>
         <it.icon size={16} style={{ flexShrink: 0 }} />
         {!collapsed && <span style={{ fontSize: TYPE.body, fontWeight: active ? 600 : 500, whiteSpace: "nowrap" }}>{it.label}</span>}
       </button>
@@ -1893,7 +1880,7 @@ const readBoard = (): BoardState => {
   return defaultBoard();
 };
 
-function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed, clusterMeta, incidentClusterIds, onDrillCluster, onClusterSettings, onClusterDisconnect, onConnect, onAddRepo, onOpenPod: _onOpenPod, onPickNs, onWidgetDeepLink, onOpenAlert, onOpenApplication, onOpenIssues, onDemoOutOfScope, pendingCl = [], pendingRepo = [] }: {
+function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed, clusterMeta, incidentClusterIds, onDrillCluster, onClusterSettings, onClusterDisconnect, onConnect, onAddRepo, onOpenPod: _onOpenPod, onPickNs, onWidgetDeepLink, onOpenAlert, onOpenApplication, onOpenIssues, pendingCl = [], pendingRepo = [] }: {
   workspaceId: string | null;
   applicationsFeed: ApplicationsFeed;
   alertEvents: AlertEventsFeed;
@@ -1907,7 +1894,6 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
   onOpenAlert?: (eventId: string) => void;
   onOpenApplication?: (applicationId: string) => void;
   onOpenIssues?: () => void;
-  onDemoOutOfScope?: (label: string) => void;
 }) {
   // 상단 요약 칩은 렌더 지점(아래 IIFE)에서 실 관측 이슈로 계산 — fixture 인벤토리 제거.
   const clusters = Object.keys(clusterMeta);
@@ -2170,12 +2156,10 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
           const widgetType = board.types[id] ?? id;
           const def = W_DEFS.find((w) => w.id === widgetType) ?? W_DEFS.find((w) => w.id === id)!;
           const span = board.spans[id] ?? def.defaultSpan;
-          const demoOutOfScope = !DEMO_RCA_WIDGET_SCOPE.has(widgetType);
           return (
             <motion.div key={id} layout transition={SPRING} className={DASHBOARD_WIDGET_GRID_ITEM_CLASS}
               data-dashboard-widget-slot={id} data-dashboard-widget-span={span}
-              data-demo-scope={demoOutOfScope ? "out" : "in"}
-              style={{ ...dashboardWidgetItemStyle(span), opacity: dragId === id ? 0.55 : demoOutOfScope ? 0.46 : 1, filter: demoOutOfScope ? "grayscale(0.16)" : undefined }}>
+              style={{ ...dashboardWidgetItemStyle(span), opacity: dragId === id ? 0.55 : 1 }}>
               {/* 네이티브 드래그는 플레인 래퍼가 담당 — motion의 팬 제스처 onDragStart와 충돌 방지 */}
               <div draggable={editing}
                 onDragStart={editing ? (e: React.DragEvent) => { setDragId(id); e.dataTransfer.effectAllowed = "move"; } : undefined}
@@ -2183,13 +2167,7 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
                 onDragEnd={editing ? () => setDragId(null) : undefined}
                 style={{ height: "100%", cursor: editing ? "grab" : undefined, position: "relative" }}>
               <WidgetFrame title={def.title} info={def.info}
-                onDeepLink={onWidgetDeepLink ? () => {
-                  if (demoOutOfScope) {
-                    onDemoOutOfScope?.(def.title);
-                    return;
-                  }
-                  onWidgetDeepLink(widgetType);
-                } : undefined}
+                onDeepLink={onWidgetDeepLink ? () => onWidgetDeepLink(widgetType) : undefined}
                 editing={editing}
                 span={span}
                 widgetType={widgetType}
@@ -2200,11 +2178,6 @@ function HomeSurface({ workspaceId, applicationsFeed, alertEvents, namespaceFeed
                 onRemove={() => save({ ...board, hidden: [...board.hidden, id] })}>
                 {body(widgetType)}
               </WidgetFrame>
-              {demoOutOfScope && !editing && (
-                <button type="button" aria-label={`${def.title}는 이번 데모 범위 밖입니다`}
-                  onClick={() => onDemoOutOfScope?.(def.title)}
-                  style={{ position: "absolute", inset: 0, zIndex: 4, border: "none", background: "transparent", cursor: "not-allowed", borderRadius: 14 }} />
-              )}
               </div>
             </motion.div>
           );
@@ -2713,13 +2686,6 @@ function App() {
     setToasts((cur) => [...cur, { id, ...t }].slice(-5));
     window.setTimeout(() => setToasts((cur) => cur.filter((x) => x.id !== id)), 3800);
   }, []);
-  const notifyDemoOutOfScope = useCallback((label: string) => {
-    pushToast({
-      title: "이번 데모 범위 밖입니다",
-      sub: `${label}은 RCA 시나리오 리팩토링 이후 확장할 화면입니다.`,
-      tone: "ok",
-    });
-  }, [pushToast]);
   const ringBell = useCallback(() => {
     setBellRingVersion((version) => version + 1);
   }, []);
@@ -2907,7 +2873,6 @@ function App() {
     <div className="uni" style={{ height: `calc(100vh / ${PRESENT_SCALE})`, overflow: "hidden", background: UI.bg, display: "flex", alignItems: "stretch", zoom: PRESENT_SCALE }}>
       {/* 전역 내비게이션 — 제품 셸의 바깥 틀 */}
       <GlobalNav collapsed={navCollapsed} setCollapsed={setNavCollapsed}
-        onDemoOutOfScope={notifyDemoOutOfScope}
         surface={surface} onSurface={(sf) => {
           setRcaIncident(null);
           setDetail(null);
@@ -3256,7 +3221,6 @@ function App() {
             else { setSurface("resources"); setResView("list"); setKindId("Pod"); }
           }}
           onDrillCluster={openClusterDrill}
-          onDemoOutOfScope={notifyDemoOutOfScope}
           onClusterSettings={() => setSurface("settings")}
           onClusterDisconnect={(cl) => {
             // 상세 뷰와 동일한 캐논 다이얼로그(이름 입력 확인 + 단계식 진행)를
